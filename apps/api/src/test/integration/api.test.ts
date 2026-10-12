@@ -324,7 +324,7 @@ describe('public endpoints', () => {
 	const KEY_2025_ONLY = 'Avatars.AdvancedFaceCustomizationEnabled'
 
 	test('GET /api/gameconfigs/v1/all serves the 2025 catalog to a newer build', async () => {
-		for (const version of ['20250718.01', '20250424.01', '20231207']) {
+		for (const version of ['20250718.01', '20250424.01', '20231207', '20260323.14']) {
 			expect(await gameConfigKeys(version), version).toContain(KEY_2025_ONLY)
 		}
 	})

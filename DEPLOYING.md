@@ -41,6 +41,12 @@ object storage, a pub/sub or WebSocket layer) and wire up the deployment yoursel
 So for example if you wanted to run on Vercel, you'd have to swap out KV for Redis, which are very similar
 services but would require small code changes.
 
+This fork also supports Cloudflare's account-level `workers.dev` subdomain. Set `RECFLARE_DOMAIN`
+to your configured account subdomain (for example, `my-account.workers.dev`) to publish each
+service at `<service>.my-account.workers.dev`; a custom DNS zone is not required for this mode.
+These endpoints are publicly reachable. Custom domains continue to work when `RECFLARE_DOMAIN`
+is a domain you control in Cloudflare.
+
 ## Prerequisites
 
 **You must have all these requirements or RecFlare will not work!**
@@ -49,7 +55,8 @@ services but would require small code changes.
 - pnpm (install with `npm install -g pnpm`)
 - bun (https://bun.sh)
 - jq/awk/sed (on Windows try `winget jq` etc.)
-- A Cloudflare account with a zone (domain) you control, for deploying
+- For custom-domain deployments, a Cloudflare account with a zone (domain) you control; or a
+  configured account-level `workers.dev` subdomain for domainless Cloudflare deployment
 - **For 2023:** A Photon Cloud Realtime and Voice account OR a custom Photon server (Luxon, OpenPhoton)
 - **For 2025:** A Photon Cloud Realtime account AND a Tachyon server, which is a custom fork of Dissonance voice that Rec Room developed. See https://discord.com/channels/1524485206550118460/1544055485336915979
   If you don't provide a Tachyon server address during deployment, your server will still work but without voice.

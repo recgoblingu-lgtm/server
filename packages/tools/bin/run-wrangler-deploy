@@ -37,6 +37,10 @@ DIR=$(basename "$PWD")
 # Per-app subdomain override, falling back to the worker's directory name.
 SUBDOMAIN=$(printf '%s' "$SUBDOMAINS_JSON" | jq -r --arg d "$DIR" '.[$d] // $d')
 HOST="$SUBDOMAIN.$DOMAIN"
+WORKERS_DEV=""
+case "$DOMAIN" in
+	*.workers.dev) WORKERS_DEV=1 ;;
+esac
 
 # Splice deploy-time resource ids into a generated config. The committed
 # wrangler.jsonc carries "local" placeholders so it needs no per-developer edits;
@@ -188,17 +192,27 @@ EXTRA_VARS=$(recflare_vars)
 MINIFY="--minify"
 [ -n "$IS_VITE" ] && MINIFY=""
 
+# A workers.dev hostname is derived from the Worker name, not a custom-domain
+# binding. Renaming to SUBDOMAIN keeps service discovery aligned with overrides.
+NAME_ARG=""
+DOMAIN_ARG="--domain $HOST"
+if [ -n "$WORKERS_DEV" ]; then
+	NAME_ARG="--name $SUBDOMAIN"
+	DOMAIN_ARG=""
+fi
+
 # Deploy with wrangler using the extracted values as binding variables
 echo "Deploying worker $NAME version $VERSION to $HOST"
 # $EXTRA_VARS is intentionally unquoted — it's a flag list to word-split, and no knob value
 # contains whitespace (see recflare_vars), so there's nothing to split on inside a value.
 wrangler deploy \
 	--config "$CONFIG" \
+	$NAME_ARG \
 	--var NAME:"$NAME" \
 	--var SENTRY_RELEASE:"$VERSION" \
 	--var DOMAIN:"$DOMAIN" \
 	--var SUBDOMAINS:"$SUBDOMAINS_JSON" \
 	$EXTRA_VARS \
-	--domain "$HOST" \
+	$DOMAIN_ARG \
 	$MINIFY \
 	"$@"

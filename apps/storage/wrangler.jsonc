@@ -5,6 +5,7 @@
 	"compatibility_date": "2026-06-16",
 	"compatibility_flags": ["nodejs_compat"],
 	"routes": [],
+	"workers_dev": true,
 	// Shared CDN R2 bucket (owned by the `cdn` worker). Uploads land here under a
 	// per-FileType subfolder; the `cdn` worker serves them back.
 	"r2_buckets": [

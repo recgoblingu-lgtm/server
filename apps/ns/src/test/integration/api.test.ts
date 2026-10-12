@@ -25,6 +25,12 @@ describe('ns endpoints', () => {
 		expect(endpoints.Accounts).toBe(`https://accounts.${TEST_DOMAIN}`)
 	})
 
+	test('a workers.dev base domain produces service hostnames', () => {
+		const endpoints = buildEndpoints('recflare.workers.dev')
+		expect(endpoints.API).toBe('https://api.recflare.workers.dev')
+		expect(endpoints.Auth).toBe('https://auth.recflare.workers.dev')
+	})
+
 	test('a malformed override object is ignored', () => {
 		for (const bad of ['', '{', 'null', '[]', '{"moderation":42}', '{"moderation":""}']) {
 			expect(buildEndpoints(TEST_DOMAIN, bad)).toEqual(buildEndpoints(TEST_DOMAIN))

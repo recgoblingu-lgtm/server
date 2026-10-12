@@ -5,6 +5,7 @@
 	"compatibility_date": "2026-06-16",
 	"compatibility_flags": ["nodejs_compat"],
 	"routes": [],
+	"workers_dev": true,
 	// The shared `recflare` D1. Read for the public `/server-status` head-count and the
 	// benefits claim; WRITTEN by the claim (`hasPlus`) and by the staff moderation panel,
 	// which files reports and hands down bans on the `report` table (see src/staff.ts) and
