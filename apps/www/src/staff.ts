@@ -1,9 +1,11 @@
 import {
 	addUsernameChange,
 	addXp,
+	clearDormSaveBlob,
 	clearPasswordHash,
 	createGift,
 	getAccount,
+	getImageById,
 	getOnlinePlayerIds,
 	getPlayerIdsInRoom,
 	getPresences,
@@ -19,7 +21,7 @@ import { validateAndGetAccountId, validateAndGetRoles } from '@repo/jwt'
 // Imported rather than reimplemented: the SQL belongs with the table, and `banFromReport`
 // is the same write `api` would do. www owns the ENDPOINTS, not the storage — see the
 // module comment below.
-import { banEvasionMatch, linkedAccounts } from '../../api/src/bans-db'
+import { banEvasionMatch, linkedAccounts, resolveBan } from '../../api/src/bans-db'
 import { getCustomAvatarItem } from '../../api/src/custom-avatar-items-db'
 import {
 	banBlockDetails,
@@ -339,6 +341,22 @@ async function recordBanAudit(
 /** The evasion arms in force, read from the same knob `api` and `match` read. */
 const armsFor = (env: Env) => banEvasionMatch(env.BAN_EVASION_MATCH)
 
+/**
+ * Reports with the reported photo's `image_name` alongside its `image_id`, so the panel can
+ * link to the picture — `img` serves by name, and the row only stores the id. Read whatever
+ * the photo's accessibility: one made private after it was reported is still evidence. A
+ * photo since deleted gets a null name and the panel shows the bare id.
+ */
+async function withImageNames(db: D1Database, reports: ReportRow[]) {
+	const ids = [...new Set(reports.flatMap((r) => (r.image_id == null ? [] : [r.image_id])))]
+	const images = await Promise.all(ids.map((id) => getImageById(db, id)))
+	const names = new Map(ids.map((id, i) => [id, images[i]?.ImageName ?? null]))
+	return reports.map((r) => ({
+		...r,
+		image_name: r.image_id == null ? null : (names.get(r.image_id) ?? null),
+	}))
+}
+
 // ---- Handlers ---------------------------------------------------------------
 
 /**
@@ -360,7 +378,7 @@ export async function searchReportsHandler(c: Context<App>) {
 		skip: intQuery(c, 'skip') ?? 0,
 		take: Math.min(intQuery(c, 'take') ?? 50, MAX_TAKE),
 	})
-	return c.json(page)
+	return c.json({ ...page, reports: await withImageNames(c.env.DB, page.reports) })
 }
 
 /** One report by id — the detail behind a search row. */
@@ -369,7 +387,8 @@ export async function getReportHandler(c: Context<App>) {
 	if (Number.isNaN(id)) return c.json({ error: 'A numeric report id is required' }, 400)
 	const report = await getReportById(c.env.DB, id)
 	if (report === null) return c.json({ error: 'No such report' }, 404)
-	return c.json(report)
+	const [withName] = await withImageNames(c.env.DB, [report])
+	return c.json(withName)
 }
 
 /**
@@ -511,6 +530,11 @@ export async function bansInForceHandler(c: Context<App>) {
  * Everything on file about one player: every report against them, every warning handed
  * down, and the ban in force if there is one.
  *
+ * `activeBan` is the ban on THIS account. `blockedBy` is what `auth` and `match` actually
+ * enforce — the same `resolveBan` under the operator's arms — so it also catches a player
+ * who is locked out by a ban on an account they share a platform identity or an IP with.
+ * Without it, a ban evader's new account read "Not banned" while being unable to play.
+ *
  * One call because it is one screen — a moderator deciding what to do about an account
  * reads all three together, and three round trips would let the page render a decision
  * out of a partially-loaded history.
@@ -519,12 +543,19 @@ export async function playerHistoryHandler(c: Context<App>) {
 	const playerId = Number.parseInt(c.req.param('id') ?? '', 10)
 	if (Number.isNaN(playerId)) return c.json({ error: 'A numeric player id is required' }, 400)
 
-	const [reports, warnings, activeBan] = await Promise.all([
+	const [reports, warnings, activeBan, blockedBy] = await Promise.all([
 		getReportsAgainst(c.env.DB, playerId),
 		getWarningsAgainst(c.env.DB, playerId),
 		getActiveBan(c.env.DB, playerId),
+		resolveBan(c.env.DB, playerId, { arms: armsFor(c.env) }),
 	])
-	return c.json({ playerId, reports, warnings, activeBan })
+	return c.json({
+		playerId,
+		reports: await withImageNames(c.env.DB, reports),
+		warnings,
+		activeBan,
+		blockedBy,
+	})
 }
 
 /**
@@ -1271,8 +1302,11 @@ async function findGiftableItem(db: D1Database, requested: string): Promise<Gift
 		getCatalogItem(db, requested),
 	])
 	const item = custom !== null && custom.Accessibility !== 0 ? custom : null
-	const row =
+	const found =
 		byKey ?? (/^\d{1,9}$/.test(requested) ? await getCatalogItemById(db, Number(requested)) : null)
+	// A custom avatar item's catalog row only carries its store listing; the item itself is the
+	// `custom_avatar_item` record found above, so the row must not make its guid `ambiguous`.
+	const row = found?.kind === CatalogKind.CustomAvatarItem ? null : found
 
 	if (item !== null && row !== null) return { kind: 'ambiguous' }
 	if (item !== null) return { kind: 'custom_item', item }
@@ -1530,6 +1564,25 @@ export async function clearPasswordHandler(c: Context<App>) {
 	await recordPlayerAudit(c, 'clear_password', { playerId, hadPassword })
 	logger.info('staff cleared a password', { moderatorId: staffId(c), playerId, hadPassword })
 	return c.json({ playerId, hadPassword })
+}
+
+/**
+ * Blank the scene on a player's dorm, for a player going back to the 2023 client: a dorm
+ * saved by a newer one won't load there. It publishes a new, empty save rather than erasing
+ * anything, so `previousSaveId` is the save to restore if they want the old dorm back.
+ * `saveId` is null when there was nothing to clear, which writes nothing and is still
+ * logged; a player with no dorm at all is a 404.
+ */
+export async function clearDormHandler(c: Context<App>) {
+	const playerId = playerIdParam(c)
+	if (playerId === null) return c.json({ error: 'A numeric player id is required' }, 400)
+
+	const cleared = await clearDormSaveBlob(c.env.DB, playerId)
+	if (cleared === null) return c.json({ error: 'That player has no dorm' }, 404)
+
+	await recordPlayerAudit(c, 'clear_dorm', { playerId, ...cleared })
+	logger.info('staff cleared a dorm', { moderatorId: staffId(c), playerId, ...cleared })
+	return c.json({ playerId, ...cleared })
 }
 
 /**

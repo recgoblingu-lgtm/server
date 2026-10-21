@@ -633,6 +633,18 @@ export const ItemPurchaseInfosRequest = z.object({
 	),
 })
 
+/** `POST /api/storefronts/v1/purchasableitems` — store listings by id. */
+export const PurchasableItemsRequest = z.object({
+	PurchasableItemIds: z
+		.array(z.number().int())
+		.nullable()
+		.describe('The listings to resolve, by `PurchasableItemId`'),
+	GiftDropIds: z
+		.array(z.number().int())
+		.nullable()
+		.describe('Sent by the client (observed null); accepted and ignored'),
+})
+
 /** One `Prices[]` entry: what the item costs in one currency, and any sale on top. */
 export const ItemPriceDto = z.object({
 	CurrencyType: z.number().int().describe('2 = RecCenterTokens — what UGC items are priced in'),
@@ -1188,6 +1200,17 @@ export const PurchaseRoomCurrencyRequest = z.object({
 })
 
 /**
+ * What a player holds of one room currency, as `GET /api/roomcurrencies/v1/getBalance` answers
+ * it. `ModifiedAt` is the time of the response: `room_balance` keeps no modification time.
+ */
+export const RoomCurrencyBalance = z.object({
+	AccountId: z.int().describe('The player the balance belongs to'),
+	CurrencyId: z.string().describe('The room currency'),
+	Balance: z.int().describe('What the player holds of it; 0 when they have never earned any'),
+	ModifiedAt: z.string().describe('ISO-8601 UTC; the time of the response'),
+})
+
+/**
  * What `POST /api/roomCurrencies/v2/purchase` answers: both balances the purchase moved,
  * inside the `{ Value, Success, Error, error_id }` envelope the room-currency writes use.
  * Each `Balance` is a RESULTING total. Only the success form has been observed; a refusal's
@@ -1297,6 +1320,17 @@ export const BulkPurchaseRequest = z.object({
 export const ConsumeConsumableRequest = z.object({
 	Id: z.int().describe('The consumable row id to spend from'),
 	DeltaCount: z.int().optional().describe('How many to spend; defaults to 1'),
+})
+
+/**
+ * `POST /api/consumables/v1/query/bulk` form body — `descriptors` repeated once per
+ * consumable to look up.
+ */
+export const QueryConsumablesRequest = z.object({
+	descriptors: z
+		.union([z.string(), z.array(z.string())])
+		.optional()
+		.describe('A ConsumableItemDesc; the key repeats for each one asked about'),
 })
 
 /**
